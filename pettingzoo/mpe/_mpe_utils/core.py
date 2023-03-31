@@ -119,7 +119,7 @@ class World:  # multi-agent world
     def step(self):
         # set actions for scripted agents
         for agent in self.scripted_agents:
-            agent.action = agent.action_callback(agent, self)
+            agent.action_callback(agent, self)
         # gather forces applied to entities
         p_force = [None] * len(self.entities)
         # apply agent physical controls

@@ -69,7 +69,7 @@ class SimpleEnv(AECEnv):
 
         self.scenario.reset_world(self.world, self.np_random)
 
-        self.agents = [agent.name for agent in self.world.agents]
+        self.agents = [agent.name for agent in self.world.agents if agent.action_callback is None]
         self.possible_agents = self.agents[:]
         self._index_map = {
             agent.name: idx for idx, agent in enumerate(self.world.agents)
@@ -81,7 +81,8 @@ class SimpleEnv(AECEnv):
         self.action_spaces = dict()
         self.observation_spaces = dict()
         state_dim = 0
-        for agent in self.world.agents:
+        self.trained_agents = [agent for agent in self.world.agents if agent.action_callback is None]
+        for agent in self.trained_agents:
             if agent.movable:
                 space_dim = self.world.dim_p * 2 + 1
             elif self.continuous_actions:
@@ -117,8 +118,9 @@ class SimpleEnv(AECEnv):
         )
 
         self.steps = 0
+        self.num_pretrained_agents = [agent for agent in self.world.agents if agent.action_callback is not None]
 
-        self.current_actions = [None] * self.num_agents
+        self.current_actions = [None] * len(self.trained_agents)
 
     def observation_space(self, agent):
         return self.observation_spaces[agent]
@@ -139,7 +141,7 @@ class SimpleEnv(AECEnv):
             self.scenario.observation(
                 self.world.agents[self._index_map[agent]], self.world
             ).astype(np.float32)
-            for agent in self.possible_agents
+            for agent in self.trained_agents
         )
         return np.concatenate(states, axis=None)
 
@@ -158,11 +160,11 @@ class SimpleEnv(AECEnv):
         self.agent_selection = self._agent_selector.reset()
         self.steps = 0
 
-        self.current_actions = [None] * self.num_agents
+        self.current_actions = [None] * len(self.trained_agents)
 
     def _execute_world_step(self):
         # set action for each agent
-        for i, agent in enumerate(self.world.agents):
+        for i, agent in enumerate(self.trained_agents):
             action = self.current_actions[i]
             scenario_action = []
             if agent.movable:
@@ -183,7 +185,7 @@ class SimpleEnv(AECEnv):
         if self.local_ratio is not None:
             global_reward = float(self.scenario.global_reward(self.world))
 
-        for agent in self.world.agents:
+        for agent in self.trained_agents:
             agent_reward = float(self.scenario.reward(agent, self.world))
             if self.local_ratio is not None:
                 reward = (
@@ -242,7 +244,7 @@ class SimpleEnv(AECEnv):
             return
         cur_agent = self.agent_selection
         current_idx = self._index_map[self.agent_selection]
-        next_idx = (current_idx + 1) % self.num_agents
+        next_idx = (current_idx + 1) % len(self.trained_agents)
         self.agent_selection = self._agent_selector.next()
 
         self.current_actions[current_idx] = action

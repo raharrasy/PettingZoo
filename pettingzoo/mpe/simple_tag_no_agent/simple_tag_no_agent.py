@@ -64,6 +64,8 @@ simple_tag_v2.env(num_good=1, num_adversaries=3, num_obstacles=2, max_cycles=25,
 
 import numpy as np
 from gymnasium.utils import EzPickle
+import os
+import sys
 
 from pettingzoo.utils.conversions import parallel_wrapper_fn
 
@@ -77,7 +79,7 @@ class raw_env(SimpleEnv, EzPickle):
     def __init__(
         self,
         num_good=1,
-        num_adversaries=3,
+        num_adversaries=2,
         num_obstacles=2,
         max_cycles=25,
         continuous_actions=False,
@@ -101,7 +103,7 @@ class raw_env(SimpleEnv, EzPickle):
             max_cycles=max_cycles,
             continuous_actions=continuous_actions,
         )
-        self.metadata["name"] = "simple_tag_v2"
+        self.metadata["name"] = "simple_tag_no_agent_v2"
 
 
 env = make_env(raw_env)
@@ -110,9 +112,8 @@ parallel_env = parallel_wrapper_fn(env)
 class Scenario(BaseScenario):
     def __init__(self):
         self.trained_adversary_policy = NonSharedMAC()
-        self.trained_adversary_policy.load_models("assets/agents.th")
-        print("Done!!!")
-        exit()
+        self.trained_adversary_policy.load_models(os.path.dirname(os.path.realpath(__file__))+"/assets")
+        self.continuous_actions = False
 
     def make_world(self, num_good=1, num_adversaries=2, num_obstacles=2):
         world = World()
@@ -135,7 +136,7 @@ class Scenario(BaseScenario):
             agent.accel = 3.0 if agent.adversary else 4.0
             agent.max_speed = 1.0 if agent.adversary else 1.3
             if base_name == "agent":
-                agent.agent_callback = self.prey_callback
+                agent.action_callback = self.prey_callback
         # add landmarks
         world.landmarks = [Landmark() for i in range(num_landmarks)]
         for i, landmark in enumerate(world.landmarks):
@@ -148,7 +149,42 @@ class Scenario(BaseScenario):
 
     def prey_callback(self, agent, world):
         agent_obs = self.observation(agent, world)
-        print(agent_obs)
+        action = self.trained_adversary_policy.select_actions(agent_obs).numpy()[-1:]
+        agent.action.u = np.zeros(world.dim_p)
+        agent.action.c = np.zeros(world.dim_c)
+
+        if agent.movable:
+            # physical action
+            agent.action.u = np.zeros(world.dim_p)
+            if self.continuous_actions:
+                # Process continuous action as in OpenAI MPE
+                agent.action.u[0] += action[0][1] - action[0][2]
+                agent.action.u[1] += action[0][3] - action[0][4]
+            else:
+                # process discrete action
+                if action[0] == 1:
+                    agent.action.u[0] = -1.0
+                if action[0] == 2:
+                    agent.action.u[0] = +1.0
+                if action[0] == 3:
+                    agent.action.u[1] = -1.0
+                if action[0] == 4:
+                    agent.action.u[1] = +1.0
+            sensitivity = 5.0
+            if agent.accel is not None:
+                sensitivity = agent.accel
+            agent.action.u *= sensitivity
+            action = action[1:]
+        if not agent.silent:
+            # communication action
+            if self.continuous_actions:
+                agent.action.c = action[0]
+            else:
+                agent.action.c = np.zeros(world.dim_c)
+                agent.action.c[action[0]] = 1.0
+            action = action[1:]
+        # make sure we used all elements of action
+        assert len(action) == 0
 
     def reset_world(self, world, np_random):
         # random properties for agents
@@ -274,6 +310,10 @@ class Scenario(BaseScenario):
             other_pos.append(other.state.p_pos - agent.state.p_pos)
             if not other.adversary:
                 other_vel.append(other.state.p_vel)
+
+        if len(other_vel) == 0 :
+            other_vel = [[0]*(2*len(self.good_agents(world)))]
+
         return np.concatenate(
             [agent.state.p_vel]
             + [agent.state.p_pos]
