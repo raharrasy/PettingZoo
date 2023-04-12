@@ -84,6 +84,12 @@ class raw_env(SimpleEnv, EzPickle):
         max_cycles=25,
         continuous_actions=False,
         render_mode=None,
+        adversary_size=0.05,
+        adversary_accel=4.0,
+        adversary_max_speed=1.3,
+        reward_shaping_weight=0.1,
+        joint_capture_reward=10.0,
+        self_capture_penalty=5.0
     ):
         EzPickle.__init__(
             self,
@@ -93,9 +99,18 @@ class raw_env(SimpleEnv, EzPickle):
             max_cycles,
             continuous_actions,
             render_mode,
+            adversary_size,
+            adversary_accel,
+            adversary_max_speed
         )
-        scenario = Scenario()
-        world = scenario.make_world(num_good, num_adversaries, num_obstacles)
+        scenario = Scenario(
+            reward_shaping_weight=0.1,
+            joint_capture_reward=10.0,
+            self_capture_penalty=5.0
+        )
+        world = scenario.make_world(
+            num_good, num_adversaries, num_obstacles, adversary_size, adversary_accel, adversary_max_speed
+        )
         super().__init__(
             scenario=scenario,
             world=world,
@@ -110,12 +125,15 @@ env = make_env(raw_env)
 parallel_env = parallel_wrapper_fn(env)
 
 class Scenario(BaseScenario):
-    def __init__(self):
+    def __init__(self, reward_shaping_weight=0.1, joint_capture_reward=10.0, self_capture_penalty=5.0):
         self.trained_adversary_policy = NonSharedMAC()
         self.trained_adversary_policy.load_models(os.path.dirname(os.path.realpath(__file__))+"/assets")
         self.continuous_actions = False
+        self.reward_shaping_weight = reward_shaping_weight
+        self.joint_capture_reward = joint_capture_reward
+        self.self_capture_penalty = self_capture_penalty
 
-    def make_world(self, num_good=1, num_adversaries=2, num_obstacles=2):
+    def make_world(self, num_good=1, num_adversaries=2, num_obstacles=2, adversary_size=0.05, adversary_accel=4.0, adversary_max_speed=1.3):
         world = World()
         # set any world properties first
         world.dim_c = 2
@@ -132,9 +150,9 @@ class Scenario(BaseScenario):
             agent.name = f"{base_name}_{base_index}"
             agent.collide = True
             agent.silent = True
-            agent.size = 0.075 if agent.adversary else 0.05
-            agent.accel = 3.0 if agent.adversary else 4.0
-            agent.max_speed = 1.0 if agent.adversary else 1.3
+            agent.size = adversary_size if agent.adversary else 0.05
+            agent.accel = adversary_accel if agent.adversary else 4.0
+            agent.max_speed = adversary_max_speed if agent.adversary else 1.3
             if base_name == "agent":
                 agent.action_callback = self.prey_callback
         # add landmarks
@@ -224,6 +242,12 @@ class Scenario(BaseScenario):
         dist_min = agent1.size + agent2.size
         return True if dist < dist_min else False
 
+    def is_in_capture_radius(self, agent1, agent2):
+        delta_pos = agent1.state.p_pos - agent2.state.p_pos
+        dist = np.sqrt(np.sum(np.square(delta_pos)))
+        dist_min = agent1.size + agent2.size + 0.1
+        return True if dist < dist_min else False
+
     # return all agents that are not adversaries
     def good_agents(self, world):
         return [agent for agent in world.agents if not agent.adversary]
@@ -278,19 +302,30 @@ class Scenario(BaseScenario):
         shape = False
         agents = self.good_agents(world)
         adversaries = self.adversaries(world)
+        #
+
         if (
             shape
         ):  # reward can optionally be shaped (decreased reward for increased distance from agents)
             for adv in adversaries:
-                rew -= 0.1 * min(
+                rew -= self.reward_shaping_weight * min(
                     np.sqrt(np.sum(np.square(a.state.p_pos - adv.state.p_pos)))
                     for a in agents
                 )
         if agent.collide:
             for ag in agents:
+                advs_in_region = 0
                 for adv in adversaries:
-                    if self.is_collision(ag, adv):
-                        rew += 10
+                    if self.is_in_capture_radius(ag, adv):
+                        advs_in_region += 1
+
+                if advs_in_region > 1:
+                    if self.is_in_capture_radius(ag, agent):
+                        rew += self.joint_capture_reward
+
+                elif advs_in_region == 1:
+                    if self.is_in_capture_radius(ag, agent):
+                        rew -= self.self_capture_penalty
         return rew
 
     def observation(self, agent, world):
