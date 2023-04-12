@@ -104,9 +104,9 @@ class raw_env(SimpleEnv, EzPickle):
             adversary_max_speed
         )
         scenario = Scenario(
-            reward_shaping_weight=0.1,
-            joint_capture_reward=10.0,
-            self_capture_penalty=5.0
+            reward_shaping_weight=reward_shaping_weight,
+            joint_capture_reward=joint_capture_reward,
+            self_capture_penalty=self_capture_penalty
         )
         world = scenario.make_world(
             num_good, num_adversaries, num_obstacles, adversary_size, adversary_accel, adversary_max_speed

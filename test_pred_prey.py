@@ -1,7 +1,13 @@
 from pettingzoo.mpe import simple_tag_no_agent_v2
 
 if __name__=="__main__":
-    parallel_env = simple_tag_no_agent_v2.parallel_env(max_cycles=100)
+    parallel_env = simple_tag_no_agent_v2.parallel_env(max_cycles=200, adversary_size=0.05,
+        adversary_accel=4.0,
+        adversary_max_speed=1.3,
+        reward_shaping_weight=0.1,
+        joint_capture_reward=10.0,
+        self_capture_penalty=5.0
+    )
     observations = parallel_env.reset()
     counter = 0
 
@@ -28,3 +34,4 @@ if __name__=="__main__":
 
         #actions = {agent: parallel_env.action_space(agent).sample() for agent in parallel_env.agents}  # this is where you would insert your policy
         observations, rewards, terminations, truncations, infos = parallel_env.step(actions)
+        print(observations)
