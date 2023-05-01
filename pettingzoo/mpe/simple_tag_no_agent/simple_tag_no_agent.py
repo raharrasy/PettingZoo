@@ -320,6 +320,8 @@ class Scenario(BaseScenario):
                         advs_in_region += 1
 
                 if advs_in_region > 1:
+                    for a in self.agents:
+                        self.truncations[a] = True
                     if self.is_in_capture_radius(ag, agent):
                         rew += self.joint_capture_reward
 
