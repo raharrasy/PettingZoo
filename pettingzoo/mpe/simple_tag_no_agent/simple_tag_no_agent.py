@@ -153,6 +153,7 @@ class Scenario(BaseScenario):
             agent.size = adversary_size if agent.adversary else 0.05
             agent.accel = adversary_accel if agent.adversary else 4.0
             agent.max_speed = adversary_max_speed if agent.adversary else 1.3
+            agent.is_alive = True
             if base_name == "agent":
                 agent.action_callback = self.prey_callback
         # add landmarks
@@ -220,6 +221,7 @@ class Scenario(BaseScenario):
             agent.state.p_pos = np_random.uniform(-1, +1, world.dim_p)
             agent.state.p_vel = np.zeros(world.dim_p)
             agent.state.c = np.zeros(world.dim_c)
+            agent.is_alive = True
         for i, landmark in enumerate(world.landmarks):
             if not landmark.boundary:
                 landmark.state.p_pos = np_random.uniform(-0.9, +0.9, world.dim_p)
@@ -320,10 +322,10 @@ class Scenario(BaseScenario):
                         advs_in_region += 1
 
                 if advs_in_region > 1:
-                    for a in self.agents:
-                        self.truncations[a] = True
                     if self.is_in_capture_radius(ag, agent):
                         rew += self.joint_capture_reward
+                    for ag in world.agents:
+                        ag.is_alive = False
 
                 elif advs_in_region == 1:
                     if self.is_in_capture_radius(ag, agent):

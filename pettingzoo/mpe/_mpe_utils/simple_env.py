@@ -255,6 +255,11 @@ class SimpleEnv(AECEnv):
             if self.steps >= self.max_cycles:
                 for a in self.agents:
                     self.truncations[a] = True
+
+            dead_agents = [a.name for a in self.world.agents if a.is_alive == False]
+            for a in self.agents:
+                if a in dead_agents:
+                    self.truncations[a] = True
         else:
             self._clear_rewards()
 
